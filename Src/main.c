@@ -21,7 +21,13 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+void init_LEDS();
 
+void init_GPIO_Analog();
+
+void config_ADC();
+
+void config_DAC();
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -70,16 +76,28 @@ int main(void)
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
+	
+		// Part 1 
+// Initialize PC0 for analog
+	init_GPIO_Analog();
+	
+	//Initailize LEDs
+	init_LEDS();
+	
+	//Configure and start the ADC
+	config_ADC();
+	
+	//Configure DAC
+	config_DAC();
+	
+		// Sine Wave: 8-bit, 32 samples/cycle
+	const uint8_t sine_table[32] = {127,151,175,197,216,232,244,251,254,251,244,
+	232,216,197,175,151,127,102,78,56,37,21,9,2,0,2,9,21,37,56,78,102};
 
+	uint8_t index = 0;
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -89,15 +107,128 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+		
+		
   while (1)
   {
     /* USER CODE END WHILE */
-
+		//read the ADC data register and turn on/off LEDs depending on the value.
+		 //Part 1
+//	if(ADC1->DR > 20){
+//		GPIOC->ODR |= GPIO_ODR_6;
+//	} else{ // For if a voltage drops below threshold
+//		GPIOC->ODR &= ~GPIO_ODR_6; // red
+//	}
+//	
+//		if(ADC1->DR > 100){
+//			GPIOC->ODR ^= GPIO_ODR_7;
+//	} else{ // For if a voltage drops below threshold
+//			GPIOC->ODR &= ~GPIO_ODR_7; //
+//	}
+//	
+//		if(ADC1->DR > 170){
+//			GPIOC->ODR |= GPIO_ODR_8;
+//	} else{ // For if a voltage drops below threshold
+//			GPIOC->ODR &= ~GPIO_ODR_8;
+//	}
+//	
+//		if(ADC1->DR > 230){
+//			GPIOC->ODR |= GPIO_ODR_9;
+//	} else{ // For if a voltage drops below threshold
+//			GPIOC->ODR &= ~GPIO_ODR_9;
+//	}
     /* USER CODE BEGIN 3 */
+		
+		HAL_Delay(1); // delay for 1ms between samples
+		// Set up DAC data into register
+	DAC->DHR8R1 = sine_table[index];
+	
+	if (index == 31){
+		index = 0;
+	}else{
+			// Increment the index of table
+		index = index + 1;
+	}
+
   }
   /* USER CODE END 3 */
 }
+void init_LEDS(){
+	
+	GPIO_InitTypeDef initc6789 = {GPIO_PIN_6 | GPIO_PIN_7 | GPIO_PIN_8 | GPIO_PIN_9, GPIO_MODE_OUTPUT_PP, GPIO_SPEED_FREQ_HIGH, GPIO_NOPULL};
+	HAL_GPIO_Init(GPIOC, &initc6789);
 
+}
+/* Sets PC0 to analog mode for ADC_IN */
+void init_GPIO_Analog(){
+	  // Enable GPIOC clock
+  RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+	
+		// Set PC0 to analog mode
+	GPIOC->MODER |= (1 << 1) | (1 << 0);
+	// No pull up or down
+	GPIOC->PUPDR &= ~(1 << 0);
+	
+}
+/* Configure the ADC */
+void config_ADC(){
+	
+	  // Enable ADC1 clock
+  RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+	
+	// Configure to continuous conversion (1 at 13)
+	ADC1->CFGR1 |= (1 << 13);
+	
+	// Configure resolution to 8-bits (10 at 4:3)
+	ADC1->CFGR1 |= (1 << 4);
+	ADC1->CFGR1 &= ~(1 << 3);
+	
+	// Disable hardware triggers (00 at 11:10)
+	ADC1->CFGR1 &= ~((1 << 11) |(1 << 10));
+	
+	// Select channel 10 (PC0)
+	ADC1->CHSELR |= (1 << 10);
+	
+	// Self calibrate for ADC
+	ADC1->CR |= (1 << 31);
+	
+	//Need to wait for calibration to finish (0 is all clear)
+	while(ADC1->CR & ADC_CR_ADCAL){	
+	}
+	
+	// ADC enable
+	ADC1->CR |= (1 << 0);
+	
+	// Wait till the ADC ready flag is set (if 1 then all clear)
+	while(!(ADC1->ISR & ADC_ISR_ADRDY)){
+	}
+	
+	//ADC start 
+	ADC1->CR |= (1 << 2);
+	
+}
+
+void config_DAC(){
+	// Enable GPIOA clock
+	RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	// Enable DAC clock
+	RCC->APB1ENR |= RCC_APB1ENR_DACEN;
+	
+	// Set to analog mode to PA4
+	GPIOA->MODER |= (1 << 9) | (1 << 8);
+
+	// No pull up or down
+	GPIOA->PUPDR &= ~((1 << 9) |(1 << 8));
+	
+	
+	// Set channel 1 to software trigger (111 for bits 5:3)
+	DAC->CR |= (1 << 5) | (1 << 4) | (1 << 3);
+	
+	// Enable channel 1 of DAC
+	DAC->CR |= (1 << 0);
+	
+	
+}
 /**
   * @brief System Clock Configuration
   * @retval None
